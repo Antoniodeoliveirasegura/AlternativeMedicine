@@ -34,7 +34,7 @@ def debug(msg: str) -> None:
     print(f"[DEBUG] {msg}")
 
 
-# ------------------ NDC helpers (openFDA) ------------------
+# ------------------ NDC helpers (openFDA + RxNav fallback) ------------------
 def hyphenate_ndc(ndc: str) -> str:
     """
     Convert 11-digit NDC like '00071015623' -> '00071-0156-23' (5-4-2 split).
@@ -75,8 +75,7 @@ async def fetch_openfda_ndc(package_or_product_ndc: str) -> Optional[Dict[str, A
                     debug(f"openFDA {field} lookup failed: {e}")
             return None
 
-        # 2) If 10-digit, try the 3 common layouts:
-        #    4-4-2, 5-3-2, 5-4-1 (for both product_ndc and package_ndc)
+        # 2) If 10-digit, try the 3 common layouts for both fields
         layouts = [(4, 4, 2), (5, 3, 2), (5, 4, 1)]
         for a, b, c in layouts:
             if len(ndc_raw) != (a + b + c):
@@ -98,6 +97,33 @@ async def fetch_openfda_ndc(package_or_product_ndc: str) -> Optional[Dict[str, A
         return None
 
 
+async def rxnav_ndc_properties(ndc: str) -> Optional[Dict[str, Any]]:
+    """Use RxNav to get labeler/product/package info for an NDC."""
+    ndc_clean = re.sub(r"\D", "", ndc or "")
+    if not ndc_clean:
+        return None
+
+    attempts = [ndc_clean]
+    # try 11-digit hyphenation
+    if len(ndc_clean) == 11:
+        attempts.append(hyphenate_ndc(ndc_clean))
+    # try common hyphenations for 10-digit
+    if len(ndc_clean) == 10:
+        for a, b, c in [(4, 4, 2), (5, 3, 2), (5, 4, 1)]:
+            if len(ndc_clean) == a + b + c:
+                attempts.append(f"{ndc_clean[:a]}-{ndc_clean[a:a+b]}-{ndc_clean[a+b:]}")
+
+    for candidate in attempts:
+        try:
+            data = await call_rxnav_api("ndcproperties.json", {"ndc": candidate})
+            props = data.get("ndcPropertyList", {}).get("ndcProperty", [])
+            if props:
+                return props[0]  # first hit is fine
+        except Exception as e:
+            debug(f"RxNav ndcproperties failed for {candidate}: {e}")
+    return None
+
+
 def summarize_openfda_product(p: Dict[str, Any]) -> Dict[str, Any]:
     """Return a compact, friendly summary from an openFDA NDC result row."""
     packaging = p.get("packaging", []) or []
@@ -116,21 +142,41 @@ def summarize_openfda_product(p: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def summarize_rxnav_ndc(props: Dict[str, Any]) -> Dict[str, Any]:
+    """Compact summary from RxNav ndcproperties."""
+    return {
+        "ndc": props.get("ndc"),
+        "name": props.get("name"),
+        "labeler": props.get("labeler"),
+        "startDate": props.get("startDate"),
+        "endDate": props.get("endDate"),
+        "rxcui": props.get("rxcui"),
+        "tty": props.get("tty"),
+        "status": props.get("status"),
+    }
+
+
 @app.get("/ndcinfo")
 async def ndcinfo(ndc: str) -> Dict[str, Any]:
     """
     Look up one NDC (11- or 10-digit or hyphenated).
-    Returns a friendly summary + raw openFDA payload.
+    Returns a friendly summary from openFDA, else from RxNav.
     """
     ndc_clean = re.sub(r"\D", "", ndc or "")
     if not ndc_clean:
         return {"input": ndc, "error": "Invalid NDC"}
 
+    # Try openFDA first
     row = await fetch_openfda_ndc(ndc_clean)
-    if not row:
-        return {"input": ndc, "error": "No openFDA match found"}
+    if row:
+        return {"input": ndc, "source": "openFDA", "summary": summarize_openfda_product(row), "raw": row}
 
-    return {"input": ndc, "summary": summarize_openfda_product(row), "openfda_raw": row}
+    # Fallback to RxNav ndcproperties
+    props = await rxnav_ndc_properties(ndc_clean)
+    if props:
+        return {"input": ndc, "source": "RxNav", "summary": summarize_rxnav_ndc(props), "raw": props}
+
+    return {"input": ndc, "error": "No match found in openFDA or RxNav"}
 
 
 # ------------------ Text helpers ------------------
@@ -307,6 +353,17 @@ def _matches_strength(name: str, value: Optional[str], unit: Optional[str]) -> b
     return bool(pattern.search(name or ""))
 
 
+async def rxnav_name_to_rxcui(name: str) -> Optional[str]:
+    """Direct name -> RXCUI fallback using RxNav."""
+    try:
+        data = await call_rxnav_api("rxcui.json", {"name": name, "search": "1"})
+        ids = data.get("idGroup", {}).get("rxnormId", [])
+        return ids[0] if ids else None
+    except Exception as e:
+        debug(f"rxcui name lookup failed: {e}")
+        return None
+
+
 # ------------------ Core normalization ------------------
 async def normalize_raw(raw: str) -> NormalizedOut:
     raw = (raw or "").strip()
@@ -371,10 +428,26 @@ async def normalize_raw(raw: str) -> NormalizedOut:
 
     # Be more lenient if we have good text match + strength info
     confidence_threshold = 0.70
+    if best.get("sim", 0) >= 0.98:
+        confidence_threshold = 0.65
     if strength and best.get("sim", 0) >= 0.90:
         confidence_threshold = 0.60
 
     status = "ok" if best["conf"] >= confidence_threshold else "ambiguous"
+
+    # Last-resort: direct name -> rxcui lookup when ambiguous
+    if status != "ok":
+        direct = await rxnav_name_to_rxcui(base or cleaned)
+        if direct:
+            return NormalizedOut(
+                status="ok",
+                query=raw,
+                rxcui=direct,
+                strength_value=strength["value"] if strength else None,
+                strength_unit=strength["unit"] if strength else None,
+                suggestions=None,
+                confidence=round(max(best.get("conf", 0), 0.66), 3),
+            )
 
     return NormalizedOut(
         status=status,
@@ -514,14 +587,25 @@ def main() -> None:
     # One-off NDC decode path
     if args.ndc:
         row = asyncio.run(fetch_openfda_ndc(args.ndc))
-        if not row:
-            print(f"No openFDA match for NDC: {args.ndc}")
-            raise SystemExit(2)
-        from pprint import pprint
+        if row:
+            from pprint import pprint
 
-        print("Summary:")
-        pprint(summarize_openfda_product(row))
-        raise SystemExit(0)
+            print("Source: openFDA")
+            print("Summary:")
+            pprint(summarize_openfda_product(row))
+            raise SystemExit(0)
+
+        props = asyncio.run(rxnav_ndc_properties(args.ndc))
+        if props:
+            from pprint import pprint
+
+            print("Source: RxNav")
+            print("Summary:")
+            pprint(summarize_rxnav_ndc(props))
+            raise SystemExit(0)
+
+        print(f"No match for NDC: {args.ndc}")
+        raise SystemExit(2)
 
     if args.cli or args.once:
         if sys.platform.startswith("win"):
