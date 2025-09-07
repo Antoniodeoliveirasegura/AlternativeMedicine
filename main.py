@@ -10,15 +10,15 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# ------------------ App setup ------------------
 app = FastAPI(title="Drug Alternatives API")
-
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten this to your domain in prod
+    allow_origins=["*"],  # tighten this to your domain in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,11 +26,111 @@ app.add_middleware(
 
 RXNAV_BASE = "https://rxnav.nlm.nih.gov/REST"
 DESIRED_TTYS = {"SCD", "SBD", "GPCK", "BPCK"}  # generic/brand clinical dose forms + packs
+OPENFDA_NDC = "https://api.fda.gov/drug/ndc.json"
 
 
-def log_debug(msg: str) -> None:
-    """Simple debug logging"""
+def debug(msg: str) -> None:
+    """Simple debug logger."""
     print(f"[DEBUG] {msg}")
+
+
+# ------------------ NDC helpers (openFDA) ------------------
+def hyphenate_ndc(ndc: str) -> str:
+    """
+    Convert 11-digit NDC like '00071015623' -> '00071-0156-23' (5-4-2 split).
+    If we get 10 digits, we can't know the split w/o metadata; we try
+    the common layouts in fetch_openfda_ndc().
+    """
+    ndc = re.sub(r"\D", "", ndc or "")
+    if len(ndc) == 11:  # standardized 11-digit
+        return f"{ndc[:5]}-{ndc[5:9]}-{ndc[9:]}"
+    return ndc  # leave 10-digit as-is; we'll try multiple layouts
+
+
+async def fetch_openfda_ndc(package_or_product_ndc: str) -> Optional[Dict[str, Any]]:
+    """
+    Try to fetch a product by package_ndc first; if not found, try product_ndc.
+    Accepts 11-digit (we'll hyphenate) or 10-digit (we'll try common splits).
+    Returns the first matching result (dict) or None.
+    """
+    ndc_raw = re.sub(r"\D", "", package_or_product_ndc or "")
+    if not ndc_raw:
+        return None
+
+    async with httpx.AsyncClient(timeout=20) as cx:
+        # 1) If 11-digit, use 5-4-2 hyphenation and try package_ndc directly
+        if len(ndc_raw) == 11:
+            pkg = hyphenate_ndc(ndc_raw)
+            for field in ("package_ndc", "product_ndc"):
+                try:
+                    url = f'{OPENFDA_NDC}?search={field}:"{pkg}"&limit=1'
+                    debug(f"openFDA lookup: {url}")
+                    r = await cx.get(url)
+                    if r.status_code == 200:
+                        js = r.json()
+                        results = js.get("results", [])
+                        if results:
+                            return results[0]
+                except Exception as e:
+                    debug(f"openFDA {field} lookup failed: {e}")
+            return None
+
+        # 2) If 10-digit, try the 3 common layouts:
+        #    4-4-2, 5-3-2, 5-4-1 (for both product_ndc and package_ndc)
+        layouts = [(4, 4, 2), (5, 3, 2), (5, 4, 1)]
+        for a, b, c in layouts:
+            if len(ndc_raw) != (a + b + c):
+                continue
+            h = f"{ndc_raw[:a]}-{ndc_raw[a:a+b]}-{ndc_raw[a+b:]}"
+            for field in ("package_ndc", "product_ndc"):
+                try:
+                    url = f'{OPENFDA_NDC}?search={field}:"{h}"&limit=1'
+                    debug(f"openFDA lookup: {url}")
+                    r = await cx.get(url)
+                    if r.status_code == 200:
+                        js = r.json()
+                        results = js.get("results", [])
+                        if results:
+                            return results[0]
+                except Exception as e:
+                    debug(f"openFDA {field} lookup failed: {e}")
+
+        return None
+
+
+def summarize_openfda_product(p: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a compact, friendly summary from an openFDA NDC result row."""
+    packaging = p.get("packaging", []) or []
+    pack_desc = packaging[0].get("description") if packaging else None
+    return {
+        "labeler_name": p.get("labeler_name"),
+        "brand_name": p.get("brand_name"),
+        "generic_name": p.get("generic_name"),
+        "dosage_form": p.get("dosage_form"),
+        "route": p.get("route"),
+        "product_ndc": p.get("product_ndc"),
+        "package_example": pack_desc,
+        "marketing_start_date": p.get("marketing_start_date"),
+        "marketing_end_date": p.get("marketing_end_date"),
+        "active_ingredients": p.get("active_ingredients"),
+    }
+
+
+@app.get("/ndcinfo")
+async def ndcinfo(ndc: str) -> Dict[str, Any]:
+    """
+    Look up one NDC (11- or 10-digit or hyphenated).
+    Returns a friendly summary + raw openFDA payload.
+    """
+    ndc_clean = re.sub(r"\D", "", ndc or "")
+    if not ndc_clean:
+        return {"input": ndc, "error": "Invalid NDC"}
+
+    row = await fetch_openfda_ndc(ndc_clean)
+    if not row:
+        return {"input": ndc, "error": "No openFDA match found"}
+
+    return {"input": ndc, "summary": summarize_openfda_product(row), "openfda_raw": row}
 
 
 # ------------------ Text helpers ------------------
@@ -63,7 +163,7 @@ def sim(a: str, b: str) -> float:
 # Common misspellings I've noticed
 SPELLING_FIXES = {
     "tylenal": "tylenol",
-    "amoxycillin": "amoxicillin", 
+    "amoxycillin": "amoxicillin",
     "liptor": "lipitor",
     "aderrall": "adderall",
     "metmorfin": "metformin",
@@ -123,12 +223,12 @@ class AlternativesOut(BaseModel):
 
 # ------------------ RxNav helpers ------------------
 async def call_rxnav_api(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Make API call to RxNav service"""
+    """Make API call to RxNav service."""
     url = f"{RXNAV_BASE}/{path}"
-    log_debug(f"API call: {url} {params or ''}")
+    debug(f"API call: {url} {params or ''}")
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.get(url, params=params)
-        log_debug(f"Response: {response.status_code}")
+        debug(f"Response: {response.status_code}")
         response.raise_for_status()
         return response.json()
 
@@ -139,7 +239,7 @@ async def get_spelling_suggestions(name: str) -> List[str]:
         suggestions = data.get("suggestionGroup", {}).get("suggestionList", {}).get("suggestion", [])
         return suggestions or []
     except Exception as e:
-        log_debug(f"Spell check failed: {e}")
+        debug(f"Spell check failed: {e}")
         return []
 
 
@@ -149,7 +249,7 @@ async def find_approximate_matches(term: str, max_entries: int = 3) -> List[Dict
         candidates = data.get("approximateGroup", {}).get("candidate", [])
         return candidates or []
     except Exception as e:
-        log_debug(f"Approximate search failed: {e}")
+        debug(f"Approximate search failed: {e}")
         return []
 
 
@@ -171,7 +271,7 @@ async def get_drug_variants(rxcui: str) -> List[Dict[str, Any]]:
         if results:
             return results
     except Exception as e:
-        log_debug(f"Comprehensive lookup failed: {e}")
+        debug(f"Comprehensive lookup failed: {e}")
 
     # Fallback to basic related lookup
     try:
@@ -185,18 +285,18 @@ async def get_drug_variants(rxcui: str) -> List[Dict[str, Any]]:
                     results.append({"rxcui": concept["rxcui"], "name": concept["name"], "tty": tty})
         return results
     except Exception as e:
-        log_debug(f"Basic lookup also failed: {e}")
+        debug(f"Basic lookup also failed: {e}")
         return []
 
 
 async def get_ndc_codes(rxcui: str) -> List[str]:
-    """Get NDC codes for a given RxCUI"""
+    """Get NDC codes for a given RxCUI."""
     try:
         data = await call_rxnav_api(f"rxcui/{rxcui}/ndcs.json")
         ndcs = data.get("ndcGroup", {}).get("ndcList", {}).get("ndc", [])
         return ndcs or []
     except Exception as e:
-        log_debug(f"NDC lookup failed: {e}")
+        debug(f"NDC lookup failed: {e}")
         return []
 
 
@@ -216,7 +316,7 @@ async def normalize_raw(raw: str) -> NormalizedOut:
     strength = parse_strength(raw)
     cleaned = re.sub(r"\s+", " ", raw)
     base = extract_base_name(cleaned)
-    log_debug(f"Processing: '{cleaned}', extracted base: '{base}'")
+    debug(f"Processing: '{cleaned}', extracted base: '{base}'")
 
     # Check for common misspellings
     hint_full = SPELLING_FIXES.get(cleaned.lower())
@@ -242,7 +342,7 @@ async def normalize_raw(raw: str) -> NormalizedOut:
             deduped.append(t)
             seen.add(t.lower())
     candidates_text = deduped
-    log_debug(f"Search candidates: {candidates_text}")
+    debug(f"Search candidates: {candidates_text}")
 
     # Search RxNav for each candidate
     all_cands: List[Dict[str, Any]] = []
@@ -250,17 +350,10 @@ async def normalize_raw(raw: str) -> NormalizedOut:
         approx = await find_approximate_matches(t, max_entries=3)
         for c in approx:
             score = float(c.get("score", 0))
-            all_cands.append(
-                {
-                    "input": t,
-                    "rxcui": c.get("rxcui"),
-                    "score": score,
-                    "sim": sim(cleaned, t),
-                }
-            )
+            all_cands.append({"input": t, "rxcui": c.get("rxcui"), "score": score, "sim": sim(cleaned, t)})
 
     if not all_cands:
-        log_debug("No matches found in RxNav")
+        debug("No matches found in RxNav")
         return NormalizedOut(
             status="not_found",
             query=raw,
@@ -274,7 +367,7 @@ async def normalize_raw(raw: str) -> NormalizedOut:
         c["conf"] = 0.35 * (c["score"] / 100.0) + 0.65 * c["sim"]
 
     best = max(all_cands, key=lambda x: x["conf"])
-    log_debug(f"Top match: {best}")
+    debug(f"Top match: {best}")
 
     # Be more lenient if we have good text match + strength info
     confidence_threshold = 0.70
@@ -300,9 +393,9 @@ async def normalize(q: str = Query(..., description="Drug (e.g., 'liptor 20 mg')
     # Basic input validation
     if not q or len(q.strip()) > 200:
         return NormalizedOut(status="not_found", query=q or "")
-    
+
     # Sanitize input - remove potentially harmful characters
-    sanitized = re.sub(r'[<>"\';\\]', '', q.strip())
+    sanitized = re.sub(r'[<>"\';\\]', "", q.strip())
     return await normalize_raw(sanitized)
 
 
@@ -311,15 +404,15 @@ async def alternatives(q: str = Query(..., description="Drug (free text, e.g., '
     # Basic input validation
     if not q or len(q.strip()) > 200:
         return AlternativesOut(
-            query=q or "", 
+            query=q or "",
             normalized=NormalizedOut(status="not_found", query=q or ""),
-            variants=[], 
-            ndcs=[], 
-            note="Invalid input"
+            variants=[],
+            ndcs=[],
+            note="Invalid input",
         )
-    
+
     # Sanitize input - remove potentially harmful characters
-    sanitized = re.sub(r'[<>"\';\\]', '', q.strip())
+    sanitized = re.sub(r'[<>"\';\\]', "", q.strip())
     norm = await normalize_raw(sanitized)
     if norm.status != "ok" or not norm.rxcui:
         note = "Ambiguous or not found."
@@ -327,11 +420,7 @@ async def alternatives(q: str = Query(..., description="Drug (free text, e.g., '
 
     variants = await get_drug_variants(norm.rxcui)
     if norm.strength_value and norm.strength_unit:
-        variants = [
-            v
-            for v in variants
-            if _matches_strength(v.get("name", ""), norm.strength_value, norm.strength_unit)
-        ]
+        variants = [v for v in variants if _matches_strength(v.get("name", ""), norm.strength_value, norm.strength_unit)]
 
     ndcs = await get_ndc_codes(norm.rxcui)
     concepts = [Concept(**v) for v in variants]
@@ -346,7 +435,7 @@ async def alternatives(q: str = Query(..., description="Drug (free text, e.g., '
 
 @app.get("/")
 def root() -> Dict[str, Any]:
-    return {"status": "ok", "endpoints": ["/normalize", "/alternatives"]}
+    return {"status": "ok", "endpoints": ["/normalize", "/alternatives", "/ndcinfo"]}
 
 
 # ------------------ CLI helpers ------------------
@@ -372,11 +461,7 @@ async def cli_run_query(q: str, show_ndcs: bool = True, limit: int = 25) -> int:
 
     variants = await get_drug_variants(norm.rxcui)
     if norm.strength_value and norm.strength_unit:
-        variants = [
-            v
-            for v in variants
-            if _matches_strength(v.get("name", ""), norm.strength_value, norm.strength_unit)
-        ]
+        variants = [v for v in variants if _matches_strength(v.get("name", ""), norm.strength_value, norm.strength_unit)]
 
     if not variants:
         print("No brand/generic variants found with that strength; showing all related:")
@@ -423,7 +508,20 @@ def main() -> None:
     parser.add_argument("--once", type=str, help="Run a single query and exit (e.g., --once 'liptor 20 mg')")
     parser.add_argument("--no-ndcs", action="store_true", help="Do not print NDCs in CLI output")
     parser.add_argument("--limit", type=int, default=25, help="Max alternatives to print (default 25)")
+    parser.add_argument("--ndc", type=str, help="Look up one NDC (e.g., --ndc 00071015623)")
     args = parser.parse_args()
+
+    # One-off NDC decode path
+    if args.ndc:
+        row = asyncio.run(fetch_openfda_ndc(args.ndc))
+        if not row:
+            print(f"No openFDA match for NDC: {args.ndc}")
+            raise SystemExit(2)
+        from pprint import pprint
+
+        print("Summary:")
+        pprint(summarize_openfda_product(row))
+        raise SystemExit(0)
 
     if args.cli or args.once:
         if sys.platform.startswith("win"):
@@ -433,9 +531,7 @@ def main() -> None:
                 pass
 
         if args.once:
-            code = asyncio.run(
-                cli_run_query(args.once, show_ndcs=not args.no_ndcs, limit=args.limit)
-            )
+            code = asyncio.run(cli_run_query(args.once, show_ndcs=not args.no_ndcs, limit=args.limit))
             raise SystemExit(code)
         else:
             asyncio.run(cli_loop())
