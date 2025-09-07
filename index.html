@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Drug Alternatives Finder</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 3rem;
+        color: white;
+      }
+
+      .header h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+        font-weight: 700;
+      }
+
+      .header p {
+        font-size: 1.1rem;
+        opacity: 0.9;
+        margin-bottom: 1rem;
+      }
+
+      .disclaimer {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 1rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        backdrop-filter: blur(10px);
+      }
+
+      .search-card {
+        background: white;
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+      }
+
+      .search-form {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+
+      .search-input {
+        flex: 1;
+        padding: 1rem;
+        border: 2px solid #e1e5e9;
+        border-radius: 8px;
+        font-size: 1rem;
+        transition: border-color 0.2s;
+      }
+
+      .search-input:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+
+      .search-btn {
+        padding: 1rem 2rem;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .search-btn:hover {
+        background: #5a6fd8;
+      }
+
+      .search-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+
+      .examples {
+        font-size: 0.9rem;
+        color: #666;
+        margin-top: 0.5rem;
+      }
+
+      .examples strong {
+        color: #333;
+      }
+
+      .results-card {
+        background: white;
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        display: none;
+      }
+
+      .loading {
+        text-align: center;
+        padding: 2rem;
+        color: #666;
+      }
+
+      .error {
+        background: #fee;
+        border: 1px solid #fcc;
+        color: #c33;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+      }
+
+      .drug-info {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        border-left: 4px solid #667eea;
+      }
+
+      .drug-name {
+        font-size: 1.3rem;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 0.5rem;
+      }
+
+      .drug-details {
+        display: flex;
+        gap: 2rem;
+        flex-wrap: wrap;
+        font-size: 0.9rem;
+        color: #666;
+      }
+
+      .alternatives {
+        margin-bottom: 2rem;
+      }
+
+      .alternatives h3 {
+        margin-bottom: 1rem;
+        color: #333;
+        font-size: 1.2rem;
+      }
+
+      .alt-list {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .alt-item {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #28a745;
+      }
+
+      .alt-item.brand {
+        border-left-color: #dc3545;
+      }
+
+      .alt-name {
+        font-weight: 600;
+        margin-bottom: 0.3rem;
+      }
+
+      .alt-type {
+        font-size: 0.8rem;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .ndcs {
+        margin-top: 2rem;
+      }
+
+      .ndcs h4 {
+        margin-bottom: 0.5rem;
+        color: #333;
+      }
+
+      .ndc-list {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        font-family: "Monaco", "Menlo", monospace;
+        font-size: 0.9rem;
+        word-break: break-all;
+      }
+
+      .footer-note {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        padding: 1rem;
+        border-radius: 8px;
+        text-align: center;
+        font-size: 0.9rem;
+        margin-top: 2rem;
+        backdrop-filter: blur(10px);
+      }
+
+      @media (max-width: 600px) {
+        .container {
+          padding: 1rem;
+        }
+
+        .header h1 {
+          font-size: 2rem;
+        }
+
+        .search-form {
+          flex-direction: column;
+        }
+
+        .drug-details {
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>💊 Drug Alternatives Finder</h1>
+        <p>Find generic and brand alternatives for your medications</p>
+        <div class="disclaimer">
+          <strong>⚠️ For informational purposes only.</strong> Always consult
+          your healthcare provider before switching medications.
+        </div>
+      </div>
+
+      <div class="search-card">
+        <div class="search-form">
+          <input
+            id="searchInput"
+            class="search-input"
+            placeholder="Enter drug name (e.g., lipitor 20mg, tylenol, generic prozac)"
+            autocomplete="off"
+          />
+          <button id="searchBtn" class="search-btn">Search</button>
+        </div>
+        <div class="examples">
+          <strong>Try:</strong> "lipitor 20mg", "generic advil", "metformin
+          500mg", "tylenol"
+        </div>
+      </div>
+
+      <div id="resultsCard" class="results-card">
+        <div id="loadingState" class="loading">
+          <div>🔍 Searching for alternatives...</div>
+        </div>
+        <div id="resultsContent"></div>
+      </div>
+
+      <div class="footer-note">
+        Powered by RxNav from the National Library of Medicine
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = "http://127.0.0.1:8000";
+      const searchInput = document.getElementById("searchInput");
+      const searchBtn = document.getElementById("searchBtn");
+      const resultsCard = document.getElementById("resultsCard");
+      const loadingState = document.getElementById("loadingState");
+      const resultsContent = document.getElementById("resultsContent");
+
+      async function searchDrug() {
+        const query = searchInput.value.trim();
+        if (!query) return;
+
+        // Show loading state
+        resultsCard.style.display = "block";
+        loadingState.style.display = "block";
+        resultsContent.innerHTML = "";
+        searchBtn.disabled = true;
+        searchBtn.textContent = "Searching...";
+
+        try {
+          const response = await fetch(
+            `${API_BASE}/alternatives?q=${encodeURIComponent(query)}`
+          );
+          const data = await response.json();
+
+          loadingState.style.display = "none";
+          searchBtn.disabled = false;
+          searchBtn.textContent = "Search";
+
+          if (data.normalized.status === "not_found") {
+            showError(
+              "No matches found. Try checking the spelling or using a different drug name."
+            );
+            return;
+          }
+
+          if (data.normalized.status === "ambiguous") {
+            showAmbiguous(data);
+            return;
+          }
+
+          showResults(data);
+        } catch (error) {
+          loadingState.style.display = "none";
+          searchBtn.disabled = false;
+          searchBtn.textContent = "Search";
+          showError(
+            `Error: ${error.message}. Make sure the API server is running.`
+          );
+        }
+      }
+
+      function showError(message) {
+        resultsContent.innerHTML = `<div class="error">${message}</div>`;
+      }
+
+      function showAmbiguous(data) {
+        let html = `<div class="error">The search was ambiguous. Did you mean:</div>`;
+        if (data.normalized.suggestions) {
+          html += `<ul style="margin-top: 1rem; padding-left: 2rem;">`;
+          data.normalized.suggestions.forEach((suggestion) => {
+            html += `<li style="margin-bottom: 0.5rem;"><a href="#" onclick="searchInput.value='${suggestion}'; searchDrug(); return false;" style="color: #667eea; text-decoration: none;">${suggestion}</a></li>`;
+          });
+          html += `</ul>`;
+        }
+        resultsContent.innerHTML = html;
+      }
+
+      function showResults(data) {
+        const { normalized, variants, ndcs } = data;
+
+        let html = `
+          <div class="drug-info">
+            <div class="drug-name">${data.query}</div>
+            <div class="drug-details">
+              <div><strong>RxCUI:</strong> ${normalized.rxcui}</div>
+              <div><strong>Confidence:</strong> ${Math.round(
+                normalized.confidence * 100
+              )}%</div>
+              ${
+                normalized.strength_value
+                  ? `<div><strong>Strength:</strong> ${normalized.strength_value} ${normalized.strength_unit}</div>`
+                  : ""
+              }
+            </div>
+          </div>
+        `;
+
+        if (variants && variants.length > 0) {
+          html += `
+            <div class="alternatives">
+              <h3>💊 Available Alternatives (${variants.length})</h3>
+              <div class="alt-list">
+          `;
+
+          variants.forEach((variant) => {
+            const isBrand = variant.tty === "SBD" || variant.name.includes("[");
+            html += `
+              <div class="alt-item ${isBrand ? "brand" : ""}">
+                <div class="alt-name">${variant.name}</div>
+                <div class="alt-type">${
+                  isBrand ? "🏷️ Brand" : "🧬 Generic"
+                } • ${variant.tty}</div>
+              </div>
+            `;
+          });
+
+          html += `</div></div>`;
+        }
+
+        if (ndcs && ndcs.length > 0) {
+          html += `
+            <div class="ndcs">
+              <h4>📋 NDC Codes (${ndcs.length} found)</h4>
+              <div class="ndc-list">${ndcs.slice(0, 10).join(", ")}${
+            ndcs.length > 10 ? ` ... and ${ndcs.length - 10} more` : ""
+          }</div>
+            </div>
+          `;
+        }
+
+        if (data.note) {
+          html += `<div style="margin-top: 1.5rem; padding: 1rem; background: #e3f2fd; border-radius: 8px; font-size: 0.9rem; color: #1565c0;">${data.note}</div>`;
+        }
+
+        resultsContent.innerHTML = html;
+      }
+
+      // Event listeners
+      searchBtn.addEventListener("click", searchDrug);
+      searchInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          searchDrug();
+        }
+      });
+
+      // Focus on input when page loads
+      searchInput.focus();
+    </script>
+  </body>
+</html>
