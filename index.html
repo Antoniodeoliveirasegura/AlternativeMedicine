@@ -15,8 +15,13 @@
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           sans-serif;
         line-height: 1.6;
-        color: #333;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #e0e0e0;
+        background: linear-gradient(
+          135deg,
+          #0f0f23 0%,
+          #1a1a2e 50%,
+          #16213e 100%
+        );
         min-height: 100vh;
       }
 
@@ -53,10 +58,11 @@
       }
 
       .search-card {
-        background: white;
+        background: #1e1e2e;
+        border: 1px solid #333;
         border-radius: 12px;
         padding: 2rem;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
         margin-bottom: 2rem;
       }
 
@@ -69,9 +75,11 @@
       .search-input {
         flex: 1;
         padding: 1rem;
-        border: 2px solid #e1e5e9;
+        border: 2px solid #444;
         border-radius: 8px;
         font-size: 1rem;
+        background: #2a2a3a;
+        color: #e0e0e0;
         transition: border-color 0.2s;
       }
 
@@ -80,72 +88,80 @@
         border-color: #667eea;
       }
 
+      .search-input::placeholder {
+        color: #888;
+      }
+
       .search-btn {
         padding: 1rem 2rem;
-        background: #667eea;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border: none;
         border-radius: 8px;
         font-size: 1rem;
         font-weight: 600;
         cursor: pointer;
-        transition: background 0.2s;
+        transition: all 0.2s;
       }
 
       .search-btn:hover {
-        background: #5a6fd8;
+        background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+        transform: translateY(-1px);
       }
 
       .search-btn:disabled {
-        background: #ccc;
+        background: #444;
         cursor: not-allowed;
+        transform: none;
       }
 
       .examples {
         font-size: 0.9rem;
-        color: #666;
+        color: #aaa;
         margin-top: 0.5rem;
       }
 
       .examples strong {
-        color: #333;
+        color: #e0e0e0;
       }
 
       .results-card {
-        background: white;
+        background: #1e1e2e;
+        border: 1px solid #333;
         border-radius: 12px;
         padding: 2rem;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
         display: none;
       }
 
       .loading {
         text-align: center;
         padding: 2rem;
-        color: #666;
+        color: #aaa;
       }
 
       .error {
-        background: #fee;
-        border: 1px solid #fcc;
-        color: #c33;
+        background: #2d1b1b;
+        border: 1px solid #5c2626;
+        color: #ff6b6b;
         padding: 1rem;
         border-radius: 8px;
         margin-bottom: 1rem;
       }
 
       .drug-info {
-        background: #f8f9fa;
+        background: #252535;
         padding: 1.5rem;
         border-radius: 8px;
         margin-bottom: 2rem;
         border-left: 4px solid #667eea;
+        border: 1px solid #333;
       }
 
       .drug-name {
         font-size: 1.3rem;
         font-weight: 600;
-        color: #333;
+        color: #e0e0e0;
         margin-bottom: 0.5rem;
       }
 
@@ -154,7 +170,7 @@
         gap: 2rem;
         flex-wrap: wrap;
         font-size: 0.9rem;
-        color: #666;
+        color: #aaa;
       }
 
       .alternatives {
@@ -163,7 +179,7 @@
 
       .alternatives h3 {
         margin-bottom: 1rem;
-        color: #333;
+        color: #e0e0e0;
         font-size: 1.2rem;
       }
 
@@ -173,24 +189,26 @@
       }
 
       .alt-item {
-        background: #f8f9fa;
+        background: #252535;
         padding: 1rem;
         border-radius: 8px;
-        border-left: 4px solid #28a745;
+        border-left: 4px solid #51cf66;
+        border: 1px solid #333;
       }
 
       .alt-item.brand {
-        border-left-color: #dc3545;
+        border-left-color: #ff6b6b;
       }
 
       .alt-name {
         font-weight: 600;
         margin-bottom: 0.3rem;
+        color: #e0e0e0;
       }
 
       .alt-type {
         font-size: 0.8rem;
-        color: #666;
+        color: #aaa;
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
@@ -201,16 +219,18 @@
 
       .ndcs h4 {
         margin-bottom: 0.5rem;
-        color: #333;
+        color: #e0e0e0;
       }
 
       .ndc-list {
-        background: #f8f9fa;
+        background: #252535;
+        border: 1px solid #333;
         padding: 1rem;
         border-radius: 8px;
         font-family: "Monaco", "Menlo", monospace;
         font-size: 0.9rem;
         word-break: break-all;
+        color: #e0e0e0;
       }
 
       .footer-note {
@@ -247,11 +267,11 @@
   <body>
     <div class="container">
       <div class="header">
-        <h1>💊 Drug Alternatives Finder</h1>
+        <h1>Drug Alternatives Finder</h1>
         <p>Find generic and brand alternatives for your medications</p>
         <div class="disclaimer">
-          <strong>⚠️ For informational purposes only.</strong> Always consult
-          your healthcare provider before switching medications.
+          <strong>For informational purposes only.</strong> Always consult your
+          healthcare provider before switching medications.
         </div>
       </div>
 
@@ -260,20 +280,20 @@
           <input
             id="searchInput"
             class="search-input"
-            placeholder="Enter drug name (e.g., lipitor 20mg, tylenol, generic prozac)"
+            placeholder="Enter drug name or NDC code (e.g., lipitor 20mg, tylenol, 00071015623)"
             autocomplete="off"
           />
           <button id="searchBtn" class="search-btn">Search</button>
         </div>
         <div class="examples">
           <strong>Try:</strong> "lipitor 20mg", "generic advil", "metformin
-          500mg", "tylenol"
+          500mg", "tylenol", or NDC codes like "00071015623"
         </div>
       </div>
 
       <div id="resultsCard" class="results-card">
         <div id="loadingState" class="loading">
-          <div>🔍 Searching for alternatives...</div>
+          <div>Searching for alternatives...</div>
         </div>
         <div id="resultsContent"></div>
       </div>
@@ -291,6 +311,14 @@
       const loadingState = document.getElementById("loadingState");
       const resultsContent = document.getElementById("resultsContent");
 
+      function isNDC(query) {
+        // Check if input looks like an NDC code (10-11 digits, possibly hyphenated)
+        const digits = query.replace(/\D/g, "");
+        return (
+          digits.length >= 10 && digits.length <= 11 && /^[\d\-]+$/.test(query)
+        );
+      }
+
       async function searchDrug() {
         const query = searchInput.value.trim();
         if (!query) return;
@@ -303,28 +331,50 @@
         searchBtn.textContent = "Searching...";
 
         try {
-          const response = await fetch(
-            `${API_BASE}/alternatives?q=${encodeURIComponent(query)}`
-          );
-          const data = await response.json();
+          let response, data;
 
-          loadingState.style.display = "none";
-          searchBtn.disabled = false;
-          searchBtn.textContent = "Search";
-
-          if (data.normalized.status === "not_found") {
-            showError(
-              "No matches found. Try checking the spelling or using a different drug name."
+          if (isNDC(query)) {
+            // Route to NDC endpoint
+            response = await fetch(
+              `${API_BASE}/ndcinfo?ndc=${encodeURIComponent(query)}`
             );
-            return;
-          }
+            data = await response.json();
 
-          if (data.normalized.status === "ambiguous") {
-            showAmbiguous(data);
-            return;
-          }
+            loadingState.style.display = "none";
+            searchBtn.disabled = false;
+            searchBtn.textContent = "Search";
 
-          showResults(data);
+            if (data.error) {
+              showNDCError(data);
+              return;
+            }
+
+            showNDCResults(data);
+          } else {
+            // Route to drug alternatives endpoint
+            response = await fetch(
+              `${API_BASE}/alternatives?q=${encodeURIComponent(query)}`
+            );
+            data = await response.json();
+
+            loadingState.style.display = "none";
+            searchBtn.disabled = false;
+            searchBtn.textContent = "Search";
+
+            if (data.normalized.status === "not_found") {
+              showError(
+                "No matches found. Try checking the spelling or using a different drug name."
+              );
+              return;
+            }
+
+            if (data.normalized.status === "ambiguous") {
+              showAmbiguous(data);
+              return;
+            }
+
+            showResults(data);
+          }
         } catch (error) {
           loadingState.style.display = "none";
           searchBtn.disabled = false;
@@ -344,7 +394,7 @@
         if (data.normalized.suggestions) {
           html += `<ul style="margin-top: 1rem; padding-left: 2rem;">`;
           data.normalized.suggestions.forEach((suggestion) => {
-            html += `<li style="margin-bottom: 0.5rem;"><a href="#" onclick="searchInput.value='${suggestion}'; searchDrug(); return false;" style="color: #667eea; text-decoration: none;">${suggestion}</a></li>`;
+            html += `<li style="margin-bottom: 0.5rem;"><a href="#" onclick="searchInput.value='${suggestion}'; searchDrug(); return false;" style="color: #74c0fc; text-decoration: none;">${suggestion}</a></li>`;
           });
           html += `</ul>`;
         }
@@ -374,7 +424,7 @@
         if (variants && variants.length > 0) {
           html += `
             <div class="alternatives">
-              <h3>💊 Available Alternatives (${variants.length})</h3>
+              <h3>Available Alternatives (${variants.length})</h3>
               <div class="alt-list">
           `;
 
@@ -383,9 +433,9 @@
             html += `
               <div class="alt-item ${isBrand ? "brand" : ""}">
                 <div class="alt-name">${variant.name}</div>
-                <div class="alt-type">${
-                  isBrand ? "🏷️ Brand" : "🧬 Generic"
-                } • ${variant.tty}</div>
+                <div class="alt-type">${isBrand ? "Brand" : "Generic"} • ${
+              variant.tty
+            }</div>
               </div>
             `;
           });
@@ -396,7 +446,7 @@
         if (ndcs && ndcs.length > 0) {
           html += `
             <div class="ndcs">
-              <h4>📋 NDC Codes (${ndcs.length} found)</h4>
+              <h4>NDC Codes (${ndcs.length} found)</h4>
               <div class="ndc-list">${ndcs.slice(0, 10).join(", ")}${
             ndcs.length > 10 ? ` ... and ${ndcs.length - 10} more` : ""
           }</div>
@@ -405,8 +455,184 @@
         }
 
         if (data.note) {
-          html += `<div style="margin-top: 1.5rem; padding: 1rem; background: #e3f2fd; border-radius: 8px; font-size: 0.9rem; color: #1565c0;">${data.note}</div>`;
+          html += `<div style="margin-top: 1.5rem; padding: 1rem; background: #1a2332; border: 1px solid #2d4a66; border-radius: 8px; font-size: 0.9rem; color: #74c0fc;">${data.note}</div>`;
         }
+
+        resultsContent.innerHTML = html;
+      }
+
+      function showNDCError(data) {
+        let html = `<div class="error">NDC not found: ${data.input}</div>`;
+
+        if (data.ndc_status_probe) {
+          const status = data.ndc_status_probe;
+          html += `
+            <div style="margin-top: 1rem; padding: 1rem; background: #252535; border: 1px solid #333; border-radius: 8px;">
+              <h4 style="color: #e0e0e0; margin-bottom: 0.5rem;">NDC Status</h4>
+              <div style="color: #aaa;">
+                <strong>NDC:</strong> ${status.ndc || "Unknown"}<br>
+                <strong>Status:</strong> <span style="color: ${
+                  status.status === "ACTIVE"
+                    ? "#51cf66"
+                    : status.status === "OBSOLETE"
+                    ? "#ff6b6b"
+                    : "#ffd43b"
+                }">${status.status || "Unknown"}</span>
+              </div>
+            </div>
+          `;
+        }
+
+        if (data.attempted_ids && data.attempted_ids.length > 0) {
+          html += `
+            <div style="margin-top: 1rem; font-size: 0.9rem; color: #aaa;">
+              <strong>Tried formats:</strong> ${data.attempted_ids.join(", ")}
+            </div>
+          `;
+        }
+
+        resultsContent.innerHTML = html;
+      }
+
+      function showNDCResults(data) {
+        const { summary, source } = data;
+
+        let html = `
+          <div class="drug-info">
+            <div class="drug-name">${
+              summary.brand_name || summary.name || "NDC Information"
+            }</div>
+            <div class="drug-details">
+              <div><strong>Source:</strong> ${source}</div>
+              <div><strong>NDC:</strong> ${
+                summary.ndc || summary.product_ndc || data.input
+              }</div>
+              ${
+                summary.rxcui
+                  ? `<div><strong>RxCUI:</strong> ${summary.rxcui}</div>`
+                  : ""
+              }
+            </div>
+          </div>
+        `;
+
+        // Product details section
+        html += `<div class="alternatives"><h3>Product Details</h3><div class="alt-list">`;
+
+        if (summary.generic_name || summary.name) {
+          html += `
+            <div class="alt-item">
+              <div class="alt-name">${
+                summary.generic_name || summary.name
+              }</div>
+              <div class="alt-type">Generic Name</div>
+            </div>
+          `;
+        }
+
+        if (summary.brand_name && summary.brand_name !== summary.generic_name) {
+          html += `
+            <div class="alt-item brand">
+              <div class="alt-name">${summary.brand_name}</div>
+              <div class="alt-type">Brand Name</div>
+            </div>
+          `;
+        }
+
+        if (summary.labeler_name || summary.labeler) {
+          html += `
+            <div class="alt-item">
+              <div class="alt-name">${
+                summary.labeler_name || summary.labeler
+              }</div>
+              <div class="alt-type">Manufacturer</div>
+            </div>
+          `;
+        }
+
+        if (summary.dosage_form) {
+          html += `
+            <div class="alt-item">
+              <div class="alt-name">${summary.dosage_form}</div>
+              <div class="alt-type">Dosage Form</div>
+            </div>
+          `;
+        }
+
+        if (summary.route) {
+          html += `
+            <div class="alt-item">
+              <div class="alt-name">${
+                Array.isArray(summary.route)
+                  ? summary.route.join(", ")
+                  : summary.route
+              }</div>
+              <div class="alt-type">Route</div>
+            </div>
+          `;
+        }
+
+        html += `</div></div>`;
+
+        // Active ingredients
+        if (
+          summary.active_ingredients &&
+          summary.active_ingredients.length > 0
+        ) {
+          html += `
+            <div class="alternatives">
+              <h3>Active Ingredients</h3>
+              <div class="alt-list">
+          `;
+
+          summary.active_ingredients.forEach((ingredient) => {
+            html += `
+              <div class="alt-item">
+                <div class="alt-name">${ingredient.name}</div>
+                <div class="alt-type">${
+                  ingredient.strength || "Active Ingredient"
+                }</div>
+              </div>
+            `;
+          });
+
+          html += `</div></div>`;
+        }
+
+        // Marketing dates and status
+        if (
+          summary.marketing_start_date ||
+          summary.marketing_end_date ||
+          summary.status
+        ) {
+          html += `
+            <div style="margin-top: 1.5rem; padding: 1rem; background: #252535; border: 1px solid #333; border-radius: 8px;">
+              <h4 style="color: #e0e0e0; margin-bottom: 0.5rem;">Marketing Information</h4>
+              <div style="color: #aaa; font-size: 0.9rem;">
+          `;
+
+          if (summary.marketing_start_date) {
+            html += `<div><strong>Start Date:</strong> ${summary.marketing_start_date}</div>`;
+          }
+          if (summary.marketing_end_date) {
+            html += `<div><strong>End Date:</strong> ${summary.marketing_end_date}</div>`;
+          }
+          if (summary.status) {
+            const statusColor =
+              summary.status === "ACTIVE"
+                ? "#51cf66"
+                : summary.status === "OBSOLETE"
+                ? "#ff6b6b"
+                : "#ffd43b";
+            html += `<div><strong>Status:</strong> <span style="color: ${statusColor}">${summary.status}</span></div>`;
+          }
+
+          html += `</div></div>`;
+        }
+
+        html += `<div style="margin-top: 1.5rem; padding: 1rem; background: #1a2332; border: 1px solid #2d4a66; border-radius: 8px; font-size: 0.9rem; color: #74c0fc;">NDC data from ${
+          source === "openFDA" ? "FDA" : "RxNav/NIH"
+        }. For informational purposes only - always verify with your pharmacist.</div>`;
 
         resultsContent.innerHTML = html;
       }

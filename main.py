@@ -97,6 +97,17 @@ async def fetch_openfda_ndc(package_or_product_ndc: str) -> Optional[Dict[str, A
         return None
 
 
+async def call_rxnav_api(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Make API call to RxNav service."""
+    url = f"{RXNAV_BASE}/{path}"
+    debug(f"API call: {url} {params or ''}")
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.get(url, params=params)
+        debug(f"Response: {response.status_code}")
+        response.raise_for_status()
+        return response.json()
+
+
 async def rxnav_ndc_properties(ndc: str) -> Optional[Dict[str, Any]]:
     """Use RxNav to get labeler/product/package info for an NDC."""
     ndc_clean = re.sub(r"\D", "", ndc or "")
@@ -115,13 +126,95 @@ async def rxnav_ndc_properties(ndc: str) -> Optional[Dict[str, Any]]:
 
     for candidate in attempts:
         try:
-            data = await call_rxnav_api("ndcproperties.json", {"ndc": candidate})
+            # ✅ Correct param name is 'id'
+            data = await call_rxnav_api("ndcproperties.json", {"id": candidate})
             props = data.get("ndcPropertyList", {}).get("ndcProperty", [])
             if props:
                 return props[0]  # first hit is fine
         except Exception as e:
             debug(f"RxNav ndcproperties failed for {candidate}: {e}")
     return None
+
+
+def _ndcstatus_attempts(ndc: str) -> List[str]:
+    """
+    Build candidate NDC-10 hyphenations for /ndcstatus.json?ndc=...
+    Preference: 10-digit hyphenated (4-4-2, 5-3-2, 5-4-1).
+    If we get 11-digit standardized, derive likely 10-digit by de-padding a leading 0
+    in one segment and keep a hyphenated 5-4-2 as a last resort.
+    """
+    digits = re.sub(r"\D", "", ndc or "")
+    attempts: List[str] = []
+
+    # If input already looks like a valid hyphenated 10-digit, keep it
+    for pat in (r"^\d{4}-\d{4}-\d{2}$", r"^\d{5}-\d{3}-\d{2}$", r"^\d{5}-\d{4}-\d{1}$"):
+        if re.match(pat, ndc or ""):
+            attempts.append(ndc)
+
+    # 10-digit raw -> add all standard hyphenations
+    if len(digits) == 10:
+        attempts.append(f"{digits[:4]}-{digits[4:8]}-{digits[8:]}")   # 4-4-2
+        attempts.append(f"{digits[:5]}-{digits[5:8]}-{digits[8:]}")   # 5-3-2
+        attempts.append(f"{digits[:5]}-{digits[5:9]}-{digits[9:]}")   # 5-4-1
+
+    # 11-digit standardized -> split 5-4-2 then try de-padding to 10-digit
+    if len(digits) == 11:
+        L, P, S = digits[:5], digits[5:9], digits[9:]  # 5-4-2
+        if L.startswith("0"):  # -> 4-4-2
+            attempts.append(f"{L[1:]}-{P}-{S}")
+        if P.startswith("0"):  # -> 5-3-2
+            attempts.append(f"{L}-{P[1:]}-{S}")
+        if S.startswith("0"):  # -> 5-4-1
+            attempts.append(f"{L}-{P}-{S[1:]}")
+        # Also try the straight 5-4-2 hyphenated (some instances accept it)
+        attempts.append(f"{L}-{P}-{S}")
+
+    # Dedup preserve order
+    seen, out = set(), []
+    for t in attempts:
+        if t and t not in seen:
+            out.append(t)
+            seen.add(t)
+    return out
+
+
+async def rxnav_ndc_status(ndc: str) -> Optional[Dict[str, Any]]:
+    """
+    Try multiple ID shapes for /ndcstatus.json. IMPORTANT: use 'ndc=' (not 'id=').
+    Returns the first successful status dict like:
+      {'ndc': '00093-0742-56', 'status': 'ACTIVE'|'OBSOLETE'|'ALIEN'}
+    """
+    for candidate in _ndcstatus_attempts(ndc):
+        try:
+            # NOTE: correct param name is 'ndc'
+            data = await call_rxnav_api("ndcstatus.json", {"ndc": candidate})
+            status = data.get("ndcStatus")
+            if status:
+                return status
+        except Exception as e:
+            debug(f"NDC status try failed for {candidate}: {e}")
+    return None
+
+
+async def rxnav_rxcui_properties(rxcui: str) -> Optional[Dict[str, Any]]:
+    """Return properties for an RXCUI (name, TTY, etc)."""
+    try:
+        data = await call_rxnav_api(f"rxcui/{rxcui}/properties.json")
+        return data.get("properties")
+    except Exception as e:
+        debug(f"rxcui properties failed: {e}")
+        return None
+
+
+async def rxnav_rxcui_names(rxcui: str) -> List[str]:
+    """All RxNorm names/synonyms for an RXCUI (handy if properties is sparse)."""
+    try:
+        data = await call_rxnav_api(f"rxcui/{rxcui}/allProperties.json", {"prop": "names"})
+        props = data.get("propConceptGroup", {}).get("propConcept", []) or []
+        return [p.get("propValue") for p in props if p.get("propValue")]
+    except Exception as e:
+        debug(f"rxcui names failed: {e}")
+        return []
 
 
 def summarize_openfda_product(p: Dict[str, Any]) -> Dict[str, Any]:
@@ -156,27 +249,69 @@ def summarize_rxnav_ndc(props: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# ------------------ /ndcinfo endpoint ------------------
 @app.get("/ndcinfo")
 async def ndcinfo(ndc: str) -> Dict[str, Any]:
     """
     Look up one NDC (11- or 10-digit or hyphenated).
-    Returns a friendly summary from openFDA, else from RxNav.
+    Returns a friendly summary from openFDA; else RxNav ndcproperties enriched with rxcui props;
+    else an ndc status probe for debugging (ACTIVE/OBSOLETE/ALIEN).
     """
     ndc_clean = re.sub(r"\D", "", ndc or "")
     if not ndc_clean:
         return {"input": ndc, "error": "Invalid NDC"}
 
-    # Try openFDA first
+    # 1) Try openFDA
     row = await fetch_openfda_ndc(ndc_clean)
     if row:
-        return {"input": ndc, "source": "openFDA", "summary": summarize_openfda_product(row), "raw": row}
+        return {
+            "input": ndc,
+            "source": "openFDA",
+            "summary": summarize_openfda_product(row),
+            "raw": row,
+        }
 
-    # Fallback to RxNav ndcproperties
+    # 2) Try RxNav ndcproperties (correct param 'id')
     props = await rxnav_ndc_properties(ndc_clean)
     if props:
-        return {"input": ndc, "source": "RxNav", "summary": summarize_rxnav_ndc(props), "raw": props}
+        rxcui = props.get("rxcui")
+        enriched_name = props.get("name")
+        tty = props.get("tty")
+        labeler = props.get("labeler")
 
-    return {"input": ndc, "error": "No match found in openFDA or RxNav"}
+        # Enrich with rxcui properties if fields are sparse
+        if rxcui and (not enriched_name or not tty):
+            rprops = await rxnav_rxcui_properties(rxcui)
+            if rprops:
+                enriched_name = enriched_name or rprops.get("name")
+                tty = tty or rprops.get("tty")
+
+            # As an extra touch, if still missing a readable name, try synonyms
+            if not enriched_name:
+                names = await rxnav_rxcui_names(rxcui)
+                if names:
+                    enriched_name = names[0]
+
+        summary = {
+            "ndc": props.get("ndc") or ndc_clean,
+            "name": enriched_name,
+            "labeler": labeler,
+            "rxcui": rxcui,
+            "tty": tty,
+            "status": props.get("status"),
+            "startDate": props.get("startDate"),
+            "endDate": props.get("endDate"),
+        }
+        return {"input": ndc, "source": "RxNav", "summary": summary, "raw": props}
+
+    # 3) Final probe: is this NDC ACTIVE/OBSOLETE/ALIEN?
+    status_probe = await rxnav_ndc_status(ndc)
+    return {
+        "input": ndc,
+        "error": "No match found in openFDA or RxNav ndcproperties",
+        "ndc_status_probe": status_probe,
+        "attempted_ids": _ndcstatus_attempts(ndc),
+    }
 
 
 # ------------------ Text helpers ------------------
@@ -267,18 +402,7 @@ class AlternativesOut(BaseModel):
     note: Optional[str] = None
 
 
-# ------------------ RxNav helpers ------------------
-async def call_rxnav_api(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Make API call to RxNav service."""
-    url = f"{RXNAV_BASE}/{path}"
-    debug(f"API call: {url} {params or ''}")
-    async with httpx.AsyncClient(timeout=20) as client:
-        response = await client.get(url, params=params)
-        debug(f"Response: {response.status_code}")
-        response.raise_for_status()
-        return response.json()
-
-
+# ------------------ RxNav drug lookup helpers ------------------
 async def get_spelling_suggestions(name: str) -> List[str]:
     try:
         data = await call_rxnav_api("spellingsuggestions.json", {"name": name})
@@ -584,27 +708,49 @@ def main() -> None:
     parser.add_argument("--ndc", type=str, help="Look up one NDC (e.g., --ndc 00071015623)")
     args = parser.parse_args()
 
-    # One-off NDC decode path
+    # One-off NDC decode path (openFDA -> RxNav enriched -> status probe)
     if args.ndc:
+        from pprint import pprint
+
+        # 1) openFDA
         row = asyncio.run(fetch_openfda_ndc(args.ndc))
         if row:
-            from pprint import pprint
-
             print("Source: openFDA")
             print("Summary:")
             pprint(summarize_openfda_product(row))
             raise SystemExit(0)
 
+        # 2) RxNav ndcproperties (+ enrich with RXCUI properties/names)
         props = asyncio.run(rxnav_ndc_properties(args.ndc))
         if props:
-            from pprint import pprint
+            rxcui = props.get("rxcui")
+            name = props.get("name")
+            tty = props.get("tty")
+            if rxcui and (not name or not tty):
+                rprops = asyncio.run(rxnav_rxcui_properties(rxcui)) or {}
+                names = asyncio.run(rxnav_rxcui_names(rxcui)) or []
+                name = name or rprops.get("name") or (names[0] if names else None)
+                tty = tty or rprops.get("tty")
 
             print("Source: RxNav")
             print("Summary:")
-            pprint(summarize_rxnav_ndc(props))
+            pprint({
+                "ndc": props.get("ndc") or re.sub(r"\D", "", args.ndc),
+                "labeler": props.get("labeler"),
+                "name": name,
+                "tty": tty,
+                "rxcui": rxcui,
+                "status": props.get("status"),
+                "startDate": props.get("startDate"),
+                "endDate": props.get("endDate"),
+            })
             raise SystemExit(0)
 
+        # 3) Final: NDC status probe
+        status_probe = asyncio.run(rxnav_ndc_status(args.ndc))
         print(f"No match for NDC: {args.ndc}")
+        print("Status probe:", status_probe)
+        print("Tried IDs:", _ndcstatus_attempts(args.ndc))
         raise SystemExit(2)
 
     if args.cli or args.once:
